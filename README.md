@@ -74,7 +74,8 @@ Set `preprocessing_num_proc` in config to use more CPU cores during feature prep
 ```bash
 python scripts/transcribe_audio.py \
   --model-dir outputs/amharic-whisper-small-ft \
-  --audio-path data/audio/sample1.wav
+  --audio-path data/audio/sample1.wav \
+  --chunk-length-s 30
 ```
 
 ## Notes

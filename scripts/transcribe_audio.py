@@ -21,9 +21,20 @@ def main() -> None:
         default=None,
         help="Device index, use -1 for CPU. Defaults to CUDA if available.",
     )
+    parser.add_argument(
+        "--chunk-length-s",
+        type=int,
+        default=30,
+        help="Chunk size in seconds for long audio transcription.",
+    )
     args = parser.parse_args()
 
-    text = transcribe_audio(args.model_dir, args.audio_path, device=args.device)
+    text = transcribe_audio(
+        args.model_dir,
+        args.audio_path,
+        device=args.device,
+        chunk_length_s=args.chunk_length_s,
+    )
     print(text)
 
 
