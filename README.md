@@ -67,6 +67,7 @@ python scripts/train_amharic_asr.py --config configs/amharic_whisper_ft.yaml
 ```
 
 Model checkpoints and final artifacts are saved to `outputs/amharic-whisper-small-ft` by default.
+Set `preprocessing_num_proc` in config to use more CPU cores during feature preparation.
 
 ## Generate transcript from audio
 

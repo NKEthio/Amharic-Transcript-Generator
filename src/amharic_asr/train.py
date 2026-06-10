@@ -27,7 +27,7 @@ class DataCollatorSpeechSeq2SeqWithPadding:
 
         labels = labels_batch["input_ids"].masked_fill(labels_batch.attention_mask.ne(1), -100)
         bos_token = self.processor.tokenizer.bos_token_id
-        if bos_token is not None and (labels[:, 0] == bos_token).all().cpu().item():
+        if bos_token is not None and (labels[:, 0] == bos_token).all().item():
             labels = labels[:, 1:]
 
         batch["labels"] = labels
@@ -57,7 +57,7 @@ def train_model(config: TrainingConfig) -> None:
         _prepare_dataset,
         fn_kwargs={"processor": processor, "config": config},
         remove_columns=dataset_columns,
-        num_proc=1,
+        num_proc=config.preprocessing_num_proc,
     )
 
     data_collator = DataCollatorSpeechSeq2SeqWithPadding(processor=processor)

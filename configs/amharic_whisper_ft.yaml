@@ -15,3 +15,4 @@ logging_steps: 25
 save_steps: 250
 eval_steps: 250
 fp16: false
+preprocessing_num_proc: 1

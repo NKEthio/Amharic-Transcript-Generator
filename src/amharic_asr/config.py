@@ -22,6 +22,7 @@ class TrainingConfig:
     save_steps: int = 250
     eval_steps: int = 250
     fp16: bool = False
+    preprocessing_num_proc: int = 1
 
 
 def load_training_config(path: str) -> TrainingConfig:
