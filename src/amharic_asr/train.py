@@ -27,7 +27,12 @@ class DataCollatorSpeechSeq2SeqWithPadding:
 
         labels = labels_batch["input_ids"].masked_fill(labels_batch.attention_mask.ne(1), -100)
         bos_token = self.processor.tokenizer.bos_token_id
-        if bos_token is not None and (labels[:, 0] == bos_token).all().item():
+        if (
+            bos_token is not None
+            and labels.size(0) > 0
+            and labels.size(1) > 0
+            and (labels[:, 0] == bos_token).all().item()
+        ):
             labels = labels[:, 1:]
 
         batch["labels"] = labels
