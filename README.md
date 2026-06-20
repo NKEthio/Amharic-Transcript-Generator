@@ -82,3 +82,23 @@ python scripts/transcribe_audio.py \
 
 - This repository provides the full mechanism (data -> fine-tune -> evaluate -> inference) for Amharic transcript generation.
 - You can switch to another FM by changing `base_model` in the config.
+
+## Run on Google Colab
+
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/google-colab/colab-tools/blob/master/samples/colab-badge.ipynb)
+
+You can run this project easily on Google Colab using the provided notebook:
+
+1. Open `amharic_asr_colab.ipynb` in this repo.
+2. Click on the "Open in Colab" button (if viewing on GitHub) or upload the `.ipynb` file to [Google Colab](https://colab.research.google.com/).
+3. Follow the instructions in the notebook to mount Google Drive, install dependencies, and start training or transcription.
+
+Alternatively, you can use the standalone script:
+
+```bash
+# Training
+python amharic_asr_standalone.py train --config configs/amharic_whisper_ft.yaml
+
+# Transcription
+python amharic_asr_standalone.py transcribe --model-dir outputs/amharic-whisper-small-ft --audio-path data/audio/sample1.wav
+```
