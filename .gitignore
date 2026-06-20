@@ -1,0 +1,7 @@
+__pycache__/
+*.py[cod]
+*$py.class
+app_output.log
+outputs/
+data/
+.pytest_cache/
