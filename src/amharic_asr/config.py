@@ -21,6 +21,9 @@ class TrainingConfig:
     logging_steps: int = 25
     save_steps: int = 250
     eval_steps: int = 250
+    max_steps: int = -1
+    generation_max_length: int = 225
+    save_total_limit: int = 3
     fp16: bool = False
     preprocessing_num_proc: int = 1
 

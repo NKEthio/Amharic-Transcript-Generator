@@ -11,7 +11,7 @@ from transformers import (
 )
 
 from .config import TrainingConfig
-from .data import load_amharic_dataset
+from .data import load_amharic_dataset, normalize_amharic
 
 
 @dataclass
@@ -41,7 +41,10 @@ def _prepare_dataset(batch: dict[str, Any], processor: WhisperProcessor, config:
         audio["array"],
         sampling_rate=audio["sampling_rate"],
     ).input_features[0]
-    batch["labels"] = processor.tokenizer(batch[config.text_column]).input_ids
+
+    # Normalize the transcript before tokenization
+    normalized_text = normalize_amharic(batch[config.text_column])
+    batch["labels"] = processor.tokenizer(normalized_text).input_ids
     return batch
 
 
@@ -81,6 +84,7 @@ def train_model(config: TrainingConfig) -> None:
         learning_rate=config.learning_rate,
         warmup_steps=config.warmup_steps,
         num_train_epochs=config.num_train_epochs,
+        max_steps=config.max_steps,
         fp16=config.fp16,
         evaluation_strategy="steps",
         save_strategy="steps",
@@ -88,7 +92,8 @@ def train_model(config: TrainingConfig) -> None:
         save_steps=config.save_steps,
         eval_steps=config.eval_steps,
         predict_with_generate=True,
-        generation_max_length=225,
+        generation_max_length=config.generation_max_length,
+        save_total_limit=config.save_total_limit,
         load_best_model_at_end=True,
         metric_for_best_model="wer",
         greater_is_better=False,
