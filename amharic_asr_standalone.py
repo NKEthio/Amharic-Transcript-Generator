@@ -1,5 +1,6 @@
 import argparse
 import os
+import re
 from dataclasses import dataclass
 from typing import Any
 
@@ -18,6 +19,7 @@ from transformers import (
 
 @dataclass
 class TrainingConfig:
+    """Configuration for fine-tuning the Whisper model."""
     base_model: str
     train_csv: str
     validation_csv: str
@@ -39,12 +41,41 @@ class TrainingConfig:
 
 
 def load_training_config(path: str) -> TrainingConfig:
+    """Loads training configuration from a YAML file."""
     with open(path, "r", encoding="utf-8") as f:
         raw = yaml.safe_load(f) or {}
     return TrainingConfig(**raw)
 
 
+def normalize_amharic(text: str) -> str:
+    """
+    Normalizes Amharic text by handling homophones and removing punctuation.
+    """
+    # 'ha' family normalization
+    text = text.replace("ሐ", "ሀ").replace("ሑ", "ሁ").replace("ሒ", "ሂ").replace("ሓ", "ሃ").replace("ሔ", "ሄ").replace("ሕ", "ህ").replace("ሖ", "ሆ")
+    text = text.replace("ኀ", "ሀ").replace("ኁ", "ሁ").replace("ኂ", "ሂ").replace("ኃ", "ሃ").replace("ኄ", "ሄ").replace("ኅ", "ህ").replace("ኆ", "ሆ")
+
+    # 'se' family normalization
+    text = text.replace("ሠ", "ሰ").replace("ሡ", "ሱ").replace("ሢ", "ሲ").replace("ሣ", "ሳ").replace("ሤ", "ሴ").replace("ሥ", "ስ").replace("ሦ", "ሶ")
+
+    # 'a' family normalization
+    text = text.replace("ዐ", "አ").replace("ዑ", "ኡ").replace("ዒ", "ኢ").replace("ዓ", "ኣ").replace("ዔ", "ኤ").replace("ዕ", "እ").replace("ዖ", "ኦ")
+
+    # 'tse' family normalization
+    text = text.replace("ፀ", "ጸ").replace("ፁ", "ጹ").replace("ፂ", "ጺ").replace("ፃ", "ጻ").replace("ፄ", "ጼ").replace("ፅ", "ጽ").replace("ፆ", "ጾ")
+
+    # Remove Ge'ez and standard punctuation
+    text = re.sub(r'[፡።፣፤፥፦፧፨]', '', text)
+    text = re.sub(r'[!"#$%&\'()*+,-./:;<=>?@\[\\\]^_`{|}~]', '', text)
+
+    # Clean up spaces
+    text = re.sub(r'\s+', ' ', text).strip()
+
+    return text
+
+
 def load_amharic_dataset(config: TrainingConfig) -> DatasetDict:
+    """Loads the Amharic dataset and ensures correct audio sampling rate."""
     datasets = load_dataset(
         "csv",
         data_files={"train": config.train_csv, "validation": config.validation_csv},
@@ -55,6 +86,7 @@ def load_amharic_dataset(config: TrainingConfig) -> DatasetDict:
 
 @dataclass
 class DataCollatorSpeechSeq2SeqWithPadding:
+    """Data collator for dynamic padding of speech features and labels."""
     processor: WhisperProcessor
 
     def __call__(self, features: list[dict[str, Any]]) -> dict[str, torch.Tensor]:
@@ -75,16 +107,21 @@ class DataCollatorSpeechSeq2SeqWithPadding:
 
 
 def _prepare_dataset(batch: dict[str, Any], processor: WhisperProcessor, config: TrainingConfig) -> dict[str, Any]:
+    """Preprocesses audio and normalizes/tokenizes text."""
     audio = batch[config.audio_column]
     batch["input_features"] = processor.feature_extractor(
         audio["array"],
         sampling_rate=audio["sampling_rate"],
     ).input_features[0]
-    batch["labels"] = processor.tokenizer(batch[config.text_column]).input_ids
+
+    # Apply Amharic normalization before tokenization
+    normalized_text = normalize_amharic(batch[config.text_column])
+    batch["labels"] = processor.tokenizer(normalized_text).input_ids
     return batch
 
 
 def train_model(config: TrainingConfig) -> None:
+    """Orchestrates the fine-tuning process."""
     processor = WhisperProcessor.from_pretrained(config.base_model, language="am", task="transcribe")
     model = WhisperForConditionalGeneration.from_pretrained(config.base_model)
     model.generation_config.language = "am"
@@ -155,6 +192,7 @@ def transcribe_audio(
     device: int | None = None,
     chunk_length_s: int = 30,
 ) -> str:
+    """Transcribes an audio file using the specified model."""
     if device is None:
         device = 0 if torch.cuda.is_available() else -1
 
@@ -169,6 +207,7 @@ def transcribe_audio(
 
 
 def main() -> None:
+    """Entry point for the standalone CLI tool."""
     parser = argparse.ArgumentParser(description="Amharic ASR Tool")
     subparsers = parser.add_subparsers(dest="command", help="Commands")
 
