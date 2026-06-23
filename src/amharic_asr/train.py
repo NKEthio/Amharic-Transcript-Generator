@@ -11,7 +11,7 @@ from transformers import (
 )
 
 from .config import TrainingConfig
-from .data import load_amharic_dataset
+from .data import load_amharic_dataset, normalize_amharic_text
 
 
 @dataclass
@@ -36,12 +36,20 @@ class DataCollatorSpeechSeq2SeqWithPadding:
 
 
 def _prepare_dataset(batch: dict[str, Any], processor: WhisperProcessor, config: TrainingConfig) -> dict[str, Any]:
+    # Resample audio to 16kHz (handled by the Audio cast in load_amharic_dataset)
+    # and compute log-Mel input features
     audio = batch[config.audio_column]
     batch["input_features"] = processor.feature_extractor(
         audio["array"],
         sampling_rate=audio["sampling_rate"],
     ).input_features[0]
-    batch["labels"] = processor.tokenizer(batch[config.text_column]).input_ids
+
+    # Normalize Amharic text to handle homophones and remove punctuation
+    # This helps improve model performance by standardizing the target text.
+    normalized_text = normalize_amharic_text(batch[config.text_column])
+
+    # Encode target text to label IDs
+    batch["labels"] = processor.tokenizer(normalized_text).input_ids
     return batch
 
 

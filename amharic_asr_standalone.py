@@ -1,5 +1,6 @@
 import argparse
 import os
+import re
 from dataclasses import dataclass
 from typing import Any
 
@@ -44,6 +45,26 @@ def load_training_config(path: str) -> TrainingConfig:
     return TrainingConfig(**raw)
 
 
+def normalize_amharic_text(text: str) -> str:
+    """
+    Normalizes Amharic text by handling homophones and removing punctuation.
+    """
+    if not text:
+        return ""
+    # Normalize homophones
+    text = re.sub("[ሐኀኸ]", "ሀ", text)
+    text = re.sub("ሠ", "ሰ", text)
+    text = re.sub("ዐ", "አ", text)
+    text = re.sub("ፀ", "ጸ", text)
+    # Remove Amharic punctuation
+    text = re.sub(r"[።፣፤፥፦፧፨]", " ", text)
+    # Remove non-Ethiopic characters (except whitespace)
+    text = re.sub(r"[^\u1200-\u137F\s]", " ", text)
+    # Clean up whitespace
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
+
+
 def load_amharic_dataset(config: TrainingConfig) -> DatasetDict:
     datasets = load_dataset(
         "csv",
@@ -80,7 +101,10 @@ def _prepare_dataset(batch: dict[str, Any], processor: WhisperProcessor, config:
         audio["array"],
         sampling_rate=audio["sampling_rate"],
     ).input_features[0]
-    batch["labels"] = processor.tokenizer(batch[config.text_column]).input_ids
+
+    # Normalize Amharic text to handle homophones and remove punctuation
+    normalized_text = normalize_amharic_text(batch[config.text_column])
+    batch["labels"] = processor.tokenizer(normalized_text).input_ids
     return batch
 
 
