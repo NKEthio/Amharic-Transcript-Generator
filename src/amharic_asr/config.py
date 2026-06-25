@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 
+import torch
 import yaml
 
 
@@ -21,7 +22,7 @@ class TrainingConfig:
     logging_steps: int = 25
     save_steps: int = 250
     eval_steps: int = 250
-    fp16: bool = False
+    fp16: bool = torch.cuda.is_available()
     preprocessing_num_proc: int = 1
 
 
