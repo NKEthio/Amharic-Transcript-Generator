@@ -213,12 +213,47 @@ def train_model(config: TrainingConfig) -> None:
     processor.save_pretrained(config.output_dir)
 
 
+def format_timestamp(seconds: float) -> str:
+    """
+    Converts seconds to SRT-compliant timestamp string (HH:MM:SS,mmm).
+    """
+    milliseconds = int((seconds % 1) * 1000)
+    seconds = int(seconds)
+    minutes, seconds = divmod(seconds, 60)
+    hours, minutes = divmod(minutes, 60)
+    return f"{hours:02d}:{minutes:02d}:{seconds:02d},{milliseconds:03d}"
+
+
+def to_srt(chunks: list[dict[str, Any]]) -> str:
+    """
+    Converts Whisper pipeline chunks into SRT format.
+    """
+    srt_lines = []
+    for i, chunk in enumerate(chunks, 1):
+        start, end = chunk["timestamp"]
+        if end is None:
+            end = start + 1.0
+
+        srt_lines.append(str(i))
+        srt_lines.append(f"{format_timestamp(start)} --> {format_timestamp(end)}")
+        srt_lines.append(chunk["text"].strip())
+        srt_lines.append("")
+
+    return "\n".join(srt_lines)
+
+
 def transcribe_audio(
     model_dir: str,
     audio_path: str,
     device: int | None = None,
     chunk_length_s: int = 30,
+    return_timestamps: bool = False,
 ) -> str:
+    """
+    Transcribes audio using a fine-tuned Whisper model.
+    If return_timestamps is True, returns SRT formatted string.
+    Otherwise, returns plain text.
+    """
     if device is None:
         device = 0 if torch.cuda.is_available() else -1
 
@@ -228,8 +263,13 @@ def transcribe_audio(
         device=device,
         chunk_length_s=chunk_length_s,
     )
-    result = asr(audio_path)
-    return result["text"]
+
+    if return_timestamps:
+        result = asr(audio_path, return_timestamps=True)
+        return to_srt(result["chunks"])
+    else:
+        result = asr(audio_path)
+        return result["text"]
 
 
 def main() -> None:
@@ -256,6 +296,16 @@ def main() -> None:
         default=30,
         help="Chunk size in seconds.",
     )
+    transcribe_parser.add_argument(
+        "--format",
+        choices=["txt", "srt"],
+        default="txt",
+        help="Output format (txt or srt). Defaults to txt.",
+    )
+    transcribe_parser.add_argument(
+        "--output",
+        help="Path to save the transcript.",
+    )
 
     args = parser.parse_args()
 
@@ -268,8 +318,14 @@ def main() -> None:
             args.audio_path,
             device=args.device,
             chunk_length_s=args.chunk_length_s,
+            return_timestamps=(args.format == "srt"),
         )
-        print(text)
+        if args.output:
+            with open(args.output, "w", encoding="utf-8") as f:
+                f.write(text)
+            print(f"Transcript saved to {args.output}")
+        else:
+            print(text)
     else:
         parser.print_help()
 
