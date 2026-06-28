@@ -27,6 +27,16 @@ def main() -> None:
         default=30,
         help="Chunk size in seconds for long audio transcription.",
     )
+    parser.add_argument(
+        "--format",
+        choices=["txt", "srt"],
+        default="txt",
+        help="Output format (txt or srt).",
+    )
+    parser.add_argument(
+        "--output",
+        help="Path to save the transcript. If not provided, prints to stdout.",
+    )
     args = parser.parse_args()
 
     text = transcribe_audio(
@@ -34,8 +44,15 @@ def main() -> None:
         args.audio_path,
         device=args.device,
         chunk_length_s=args.chunk_length_s,
+        return_timestamps=(args.format == "srt"),
     )
-    print(text)
+
+    if args.output:
+        with open(args.output, "w", encoding="utf-8") as f:
+            f.write(text)
+        print(f"Transcript saved to {args.output}")
+    else:
+        print(text)
 
 
 if __name__ == "__main__":
