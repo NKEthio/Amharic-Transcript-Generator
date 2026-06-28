@@ -213,12 +213,59 @@ def train_model(config: TrainingConfig) -> None:
     processor.save_pretrained(config.output_dir)
 
 
+def format_timestamp(seconds: float, srt: bool = False) -> str:
+    """
+    Converts seconds into a subtitle timestamp format (HH:MM:SS,mmm or HH:MM:SS.mmm).
+    """
+    td_hours = int(seconds // 3600)
+    td_mins = int((seconds % 3600) // 60)
+    td_secs = int(seconds % 60)
+    td_millis = int(round((seconds % 1) * 1000))
+
+    separator = "," if srt else "."
+    return f"{td_hours:02d}:{td_mins:02d}:{td_secs:02d}{separator}{td_millis:03d}"
+
+
+def to_srt(chunks: list[dict]) -> str:
+    """
+    Converts ASR chunks with timestamps into SRT format.
+    """
+    srt_output = []
+    for i, chunk in enumerate(chunks, 1):
+        start, end = chunk["timestamp"]
+        if end is None:
+            end = start + 5.0
+
+        srt_output.append(str(i))
+        srt_output.append(f"{format_timestamp(start, srt=True)} --> {format_timestamp(end, srt=True)}")
+        srt_output.append(chunk["text"].strip())
+        srt_output.append("")
+    return "\n".join(srt_output)
+
+
+def to_vtt(chunks: list[dict]) -> str:
+    """
+    Converts ASR chunks with timestamps into WebVTT format.
+    """
+    vtt_output = ["WEBVTT", ""]
+    for chunk in chunks:
+        start, end = chunk["timestamp"]
+        if end is None:
+            end = start + 5.0
+
+        vtt_output.append(f"{format_timestamp(start)} --> {format_timestamp(end)}")
+        vtt_output.append(chunk["text"].strip())
+        vtt_output.append("")
+    return "\n".join(vtt_output)
+
+
 def transcribe_audio(
     model_dir: str,
     audio_path: str,
     device: int | None = None,
     chunk_length_s: int = 30,
-) -> str:
+    return_timestamps: bool = False,
+) -> dict:
     if device is None:
         device = 0 if torch.cuda.is_available() else -1
 
@@ -228,8 +275,15 @@ def transcribe_audio(
         device=device,
         chunk_length_s=chunk_length_s,
     )
-    result = asr(audio_path)
-    return result["text"]
+
+    generate_kwargs = {"language": "am", "task": "transcribe"}
+
+    result = asr(
+        audio_path,
+        return_timestamps=return_timestamps,
+        generate_kwargs=generate_kwargs
+    )
+    return result
 
 
 def main() -> None:
@@ -256,6 +310,16 @@ def main() -> None:
         default=30,
         help="Chunk size in seconds.",
     )
+    transcribe_parser.add_argument(
+        "--format",
+        choices=["txt", "srt", "vtt"],
+        default="txt",
+        help="Output format (default: txt).",
+    )
+    transcribe_parser.add_argument(
+        "--output",
+        help="Path to save the output file.",
+    )
 
     args = parser.parse_args()
 
@@ -263,13 +327,28 @@ def main() -> None:
         config = load_training_config(args.config)
         train_model(config)
     elif args.command == "transcribe":
-        text = transcribe_audio(
+        return_timestamps = args.format in ["srt", "vtt"]
+        result = transcribe_audio(
             args.model_dir,
             args.audio_path,
             device=args.device,
             chunk_length_s=args.chunk_length_s,
+            return_timestamps=return_timestamps,
         )
-        print(text)
+
+        if args.format == "srt":
+            output_text = to_srt(result.get("chunks", []))
+        elif args.format == "vtt":
+            output_text = to_vtt(result.get("chunks", []))
+        else:
+            output_text = result["text"]
+
+        if args.output:
+            with open(args.output, "w", encoding="utf-8") as f:
+                f.write(output_text)
+            print(f"Transcript saved to {args.output}")
+        else:
+            print(output_text)
     else:
         parser.print_help()
 
