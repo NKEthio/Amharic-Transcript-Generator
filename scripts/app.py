@@ -19,8 +19,8 @@ def process_audio(audio_path, model_dir):
         return f"Model directory not found: {model_dir}"
 
     try:
-        transcript = transcribe_audio(model_dir, audio_path)
-        return transcript
+        result = transcribe_audio(model_dir, audio_path)
+        return result["text"]
     except Exception as e:
         return f"Error during transcription: {str(e)}"
 
