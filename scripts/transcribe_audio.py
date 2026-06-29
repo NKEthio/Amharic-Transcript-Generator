@@ -29,9 +29,9 @@ def main() -> None:
     )
     parser.add_argument(
         "--format",
-        choices=["txt", "srt"],
+        choices=["txt", "srt", "vtt"],
         default="txt",
-        help="Output format (txt or srt).",
+        help="Output format (txt, srt, or vtt).",
     )
     parser.add_argument(
         "--output",
@@ -44,7 +44,7 @@ def main() -> None:
         args.audio_path,
         device=args.device,
         chunk_length_s=args.chunk_length_s,
-        return_timestamps=(args.format == "srt"),
+        format=args.format,
     )
 
     if args.output:
