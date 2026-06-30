@@ -66,15 +66,34 @@ def train_model(config: TrainingConfig) -> None:
 
     data_collator = DataCollatorSpeechSeq2SeqWithPadding(processor=processor)
     wer = evaluate.load("wer")
+    cer = evaluate.load("cer")
 
     def compute_metrics(eval_prediction):
         pred_ids = eval_prediction.predictions
         label_ids = eval_prediction.label_ids
 
+        # Replace -100 with pad_token_id so they can be decoded
         label_ids[label_ids == -100] = processor.tokenizer.pad_token_id
         pred_str = processor.tokenizer.batch_decode(pred_ids, skip_special_tokens=True)
         label_str = processor.tokenizer.batch_decode(label_ids, skip_special_tokens=True)
-        return {"wer": 100 * wer.compute(predictions=pred_str, references=label_str)}
+
+        # Apply Amharic normalization for a fair evaluation during training.
+        # This ensures that homophone differences don't penalize the model's score.
+        pred_str = [normalize_amharic(p) for p in pred_str]
+        label_str = [normalize_amharic(l) for l in label_str]
+
+        # Filter out samples with empty reference to avoid issues with WER/CER calculation
+        filtered_indices = [i for i, l in enumerate(label_str) if l.strip()]
+        if not filtered_indices:
+            return {"wer": 0.0, "cer": 0.0}
+
+        filtered_preds = [pred_str[i] for i in filtered_indices]
+        filtered_labels = [label_str[i] for i in filtered_indices]
+
+        wer_val = 100 * wer.compute(predictions=filtered_preds, references=filtered_labels)
+        cer_val = 100 * cer.compute(predictions=filtered_preds, references=filtered_labels)
+
+        return {"wer": wer_val, "cer": cer_val}
 
     training_args = Seq2SeqTrainingArguments(
         output_dir=config.output_dir,
