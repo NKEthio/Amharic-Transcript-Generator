@@ -58,12 +58,14 @@ def test_to_srt_with_none_end():
     result = to_srt(chunks)
     assert result == expected
 
+@patch("amharic_asr.transcribe.librosa.load")
 @patch("amharic_asr.transcribe.pipeline")
 @patch("amharic_asr.transcribe.torch.cuda.is_available")
-def test_transcribe_audio_interface(mock_cuda, mock_pipeline):
+def test_transcribe_audio_interface(mock_cuda, mock_pipeline, mock_load):
     mock_cuda.return_value = False
     mock_asr = MagicMock()
     mock_pipeline.return_value = mock_asr
+    mock_load.return_value = (MagicMock(), 16000)
 
     # Mocking asr returns
     mock_asr.return_value = {"text": "ሰላም", "chunks": [{"timestamp": (0.0, 1.0), "text": "ሰላም"}]}
@@ -77,17 +79,15 @@ def test_transcribe_audio_interface(mock_cuda, mock_pipeline):
         device=-1,
         chunk_length_s=30
     )
-    mock_asr.assert_called_with(
-        "audio.wav",
-        return_timestamps=False,
-        generate_kwargs={"language": "amharic"}
-    )
+    mock_asr.assert_called()
+    call_args = mock_asr.call_args
+    assert call_args[1]["return_timestamps"] is False
+    assert call_args[1]["generate_kwargs"] == {"language": "amharic"}
 
     # Test SRT format
     res = transcribe_audio("model", "audio.wav", format="srt")
     assert "00:00:00,000 --> 00:00:01,000" in res
-    mock_asr.assert_called_with(
-        "audio.wav",
-        return_timestamps=True,
-        generate_kwargs={"language": "amharic"}
-    )
+    mock_asr.assert_called()
+    call_args = mock_asr.call_args
+    assert call_args[1]["return_timestamps"] is True
+    assert call_args[1]["generate_kwargs"] == {"language": "amharic"}

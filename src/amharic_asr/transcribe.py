@@ -1,6 +1,7 @@
 from typing import Any
 
 import torch
+import librosa
 from transformers import pipeline
 
 
@@ -72,9 +73,11 @@ def transcribe_audio(
         chunk_length_s=chunk_length_s,
     )
 
+    audio, sr = librosa.load(audio_path, sr=16000)
+
     return_timestamps = (format in ["srt", "vtt"])
     result = asr(
-        audio_path,
+        audio,
         return_timestamps=return_timestamps,
         generate_kwargs={"language": "amharic"}
     )
