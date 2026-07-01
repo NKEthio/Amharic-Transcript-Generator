@@ -82,7 +82,7 @@ def test_transcribe_audio_interface(mock_cuda, mock_pipeline, mock_load):
     mock_asr.assert_called()
     call_args = mock_asr.call_args
     assert call_args[1]["return_timestamps"] is False
-    assert call_args[1]["generate_kwargs"] == {"language": "amharic"}
+    assert call_args[1]["generate_kwargs"] == {"language": "amharic", "task": "transcribe"}
 
     # Test SRT format
     res = transcribe_audio("model", "audio.wav", format="srt")
@@ -90,4 +90,4 @@ def test_transcribe_audio_interface(mock_cuda, mock_pipeline, mock_load):
     mock_asr.assert_called()
     call_args = mock_asr.call_args
     assert call_args[1]["return_timestamps"] is True
-    assert call_args[1]["generate_kwargs"] == {"language": "amharic"}
+    assert call_args[1]["generate_kwargs"] == {"language": "amharic", "task": "transcribe"}
