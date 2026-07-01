@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 
 import yaml
+import torch
 
 
 @dataclass
@@ -24,7 +25,7 @@ class TrainingConfig:
     max_steps: int = -1
     generation_max_length: int = 225
     save_total_limit: int = 3
-    fp16: bool = False
+    fp16: bool = torch.cuda.is_available()
     preprocessing_num_proc: int = 1
 
 

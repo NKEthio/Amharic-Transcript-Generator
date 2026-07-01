@@ -58,9 +58,11 @@ def transcribe_audio(
     device: int | None = None,
     chunk_length_s: int = 30,
     format: str = "txt",
+    task: str = "transcribe",
 ) -> str:
     """
     Generate transcript for an audio file in the specified format (txt, srt, vtt).
+    The 'task' can be either 'transcribe' (default) or 'translate' (to English).
     """
     if device is None:
         device = 0 if torch.cuda.is_available() else -1
@@ -79,7 +81,7 @@ def transcribe_audio(
     result = asr(
         audio,
         return_timestamps=return_timestamps,
-        generate_kwargs={"language": "amharic"}
+        generate_kwargs={"language": "amharic", "task": task}
     )
 
     if format == "srt":

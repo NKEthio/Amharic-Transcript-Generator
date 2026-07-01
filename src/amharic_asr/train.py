@@ -66,15 +66,32 @@ def train_model(config: TrainingConfig) -> None:
 
     data_collator = DataCollatorSpeechSeq2SeqWithPadding(processor=processor)
     wer = evaluate.load("wer")
+    cer = evaluate.load("cer")
 
     def compute_metrics(eval_prediction):
+        """
+        Computes WER and CER metrics after normalizing both predictions and labels.
+        """
         pred_ids = eval_prediction.predictions
         label_ids = eval_prediction.label_ids
 
+        # Replace -100 with pad token id to avoid decoding errors
         label_ids[label_ids == -100] = processor.tokenizer.pad_token_id
+
+        # Decode predictions and labels
         pred_str = processor.tokenizer.batch_decode(pred_ids, skip_special_tokens=True)
         label_str = processor.tokenizer.batch_decode(label_ids, skip_special_tokens=True)
-        return {"wer": 100 * wer.compute(predictions=pred_str, references=label_str)}
+
+        # Normalize Amharic text for fair evaluation
+        # This handles homophones and removes punctuation
+        pred_str_norm = [normalize_amharic(s) for s in pred_str]
+        label_str_norm = [normalize_amharic(s) for s in label_str]
+
+        # Calculate metrics
+        wer_score = 100 * wer.compute(predictions=pred_str_norm, references=label_str_norm)
+        cer_score = 100 * cer.compute(predictions=pred_str_norm, references=label_str_norm)
+
+        return {"wer": wer_score, "cer": cer_score}
 
     training_args = Seq2SeqTrainingArguments(
         output_dir=config.output_dir,
