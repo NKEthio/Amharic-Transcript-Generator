@@ -11,7 +11,7 @@ if SRC not in sys.path:
 
 from amharic_asr.transcribe import transcribe_audio
 
-def process_audio(audio_path, model_dir, output_format, chunk_length_s):
+def process_audio(audio_path, model_dir, output_format, chunk_length_s, task):
     """
     Handles audio transcription and prepares the result for display and download.
     """
@@ -28,7 +28,8 @@ def process_audio(audio_path, model_dir, output_format, chunk_length_s):
             model_dir,
             audio_path,
             format=output_format,
-            chunk_length_s=chunk_length_s
+            chunk_length_s=chunk_length_s,
+            task=task
         )
 
         # Save to a temporary file for download
@@ -61,6 +62,11 @@ def main():
                         value="txt",
                         label="Output Format"
                     )
+                    task_input = gr.Radio(
+                        choices=["transcribe", "translate"],
+                        value="transcribe",
+                        label="Task"
+                    )
                     chunk_input = gr.Slider(
                         minimum=5,
                         maximum=60,
@@ -78,7 +84,7 @@ def main():
         # Link the button to the processing function
         submit_btn.click(
             fn=process_audio,
-            inputs=[audio_input, model_dir_input, format_input, chunk_input],
+            inputs=[audio_input, model_dir_input, format_input, chunk_input, task_input],
             outputs=[transcript_output, file_output]
         )
 

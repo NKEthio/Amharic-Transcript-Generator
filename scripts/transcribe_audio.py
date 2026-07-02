@@ -34,6 +34,12 @@ def main() -> None:
         help="Output format (txt, srt, or vtt).",
     )
     parser.add_argument(
+        "--task",
+        choices=["transcribe", "translate"],
+        default="transcribe",
+        help="Task to perform: transcribe or translate.",
+    )
+    parser.add_argument(
         "--output",
         help="Path to save the transcript. If not provided, prints to stdout.",
     )
@@ -45,6 +51,7 @@ def main() -> None:
         device=args.device,
         chunk_length_s=args.chunk_length_s,
         format=args.format,
+        task=args.task,
     )
 
     if args.output:

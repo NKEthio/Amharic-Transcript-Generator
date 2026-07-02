@@ -1,4 +1,5 @@
 import re
+import string
 
 from datasets import Audio, DatasetDict, load_dataset
 
@@ -15,7 +16,8 @@ def normalize_amharic(text: str) -> str:
     # Remove Amharic punctuation
     text = re.sub(r"[\u1361-\u1368]", " ", text)
     # Remove standard punctuation
-    text = re.sub(r'[!"#$%&\'()*+,-./:;<=>?@[\\]^_`{|}~]', " ", text)
+    for char in string.punctuation:
+        text = text.replace(char, " ")
 
     # Normalize homophones
     # ሀ, ሐ, ኀ -> ሀ
