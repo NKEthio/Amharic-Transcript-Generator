@@ -11,7 +11,7 @@ SRC = os.path.join(ROOT, "src")
 if SRC not in sys.path:
     sys.path.insert(0, SRC)
 
-from amharic_asr.transcribe import transcribe_audio
+from amharic_asr.transcribe import transcribe_audio, load_transcription_pipeline
 from amharic_asr.data import normalize_amharic
 
 
@@ -39,9 +39,16 @@ def main() -> None:
         print(f"Error: CSV must contain columns '{args.audio_column}' and '{args.text_column}'")
         sys.exit(1)
 
+    # Optimization: Load the model once outside the loop to avoid redundant reloads
+    print(f"Loading model from {args.model_dir}...")
+    asr_pipeline = load_transcription_pipeline(
+        model_dir=args.model_dir,
+        device=args.device
+    )
+
     results = []
 
-    print(f"Evaluating model from {args.model_dir} on {len(df)} samples...")
+    print(f"Evaluating model on {len(df)} samples...")
 
     for _, row in tqdm(df.iterrows(), total=len(df)):
         audio_path = row[args.audio_column]
@@ -56,12 +63,13 @@ def main() -> None:
                 audio_path = alt_path
 
         try:
-            # Generate prediction
+            # Generate prediction using the pre-loaded pipeline for better efficiency
             prediction = transcribe_audio(
-                args.model_dir,
-                audio_path,
+                model_dir=args.model_dir,
+                audio_path=audio_path,
                 device=args.device,
-                format="txt"
+                format="txt",
+                asr_pipeline=asr_pipeline
             )
 
             # Normalize for fair evaluation
