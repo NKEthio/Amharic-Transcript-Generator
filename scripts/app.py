@@ -3,13 +3,43 @@ import os
 import sys
 import gradio as gr
 import tempfile
+from typing import Any
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SRC = os.path.join(ROOT, "src")
 if SRC not in sys.path:
     sys.path.insert(0, SRC)
 
-from amharic_asr.transcribe import transcribe_audio
+from amharic_asr.transcribe import transcribe_audio, load_transcription_pipeline
+
+# Simple global cache for the ASR pipeline
+# This helps avoid reloading the model on every request, making the UI much more responsive.
+pipeline_cache = {
+    "pipeline": None,
+    "model_dir": None,
+    "chunk_length_s": None
+}
+
+def get_pipeline(model_dir: str, chunk_length_s: int) -> Any:
+    """
+    Retrieves the ASR pipeline from cache or loads it if necessary.
+    """
+    global pipeline_cache
+
+    # Check if the requested model or settings have changed
+    if (pipeline_cache["pipeline"] is None or
+        pipeline_cache["model_dir"] != model_dir or
+        pipeline_cache["chunk_length_s"] != chunk_length_s):
+
+        print(f"Loading/Updating ASR pipeline from {model_dir}...")
+        pipeline_cache["pipeline"] = load_transcription_pipeline(
+            model_dir=model_dir,
+            chunk_length_s=chunk_length_s
+        )
+        pipeline_cache["model_dir"] = model_dir
+        pipeline_cache["chunk_length_s"] = chunk_length_s
+
+    return pipeline_cache["pipeline"]
 
 def process_audio(audio_path, model_dir, output_format, chunk_length_s, task):
     """
@@ -23,13 +53,17 @@ def process_audio(audio_path, model_dir, output_format, chunk_length_s, task):
         return f"Model directory not found: {model_dir}", None
 
     try:
-        # Generate transcript using the core transcription logic
+        # Get the pipeline from cache (or load it)
+        asr_pipeline = get_pipeline(model_dir, chunk_length_s)
+
+        # Generate transcript using the core transcription logic with the cached pipeline
         transcript = transcribe_audio(
             model_dir,
             audio_path,
             format=output_format,
             chunk_length_s=chunk_length_s,
-            task=task
+            task=task,
+            asr_pipeline=asr_pipeline
         )
 
         # Save to a temporary file for download

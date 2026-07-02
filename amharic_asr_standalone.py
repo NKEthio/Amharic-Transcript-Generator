@@ -19,6 +19,7 @@ from transformers import (
 
 @dataclass
 class TrainingConfig:
+    """Configuration for fine-tuning the Amharic ASR model."""
     base_model: str
     train_csv: str
     validation_csv: str
@@ -45,16 +46,17 @@ class TrainingConfig:
 def normalize_amharic(text: str) -> str:
     """
     Normalizes Amharic text by handling homophones and removing punctuation.
+    This ensures consistency during training and evaluation.
     """
     if not text:
         return ""
 
-    # Remove Amharic punctuation
+    # Remove Amharic punctuation (Ge'ez punctuation marks)
     text = re.sub(r"[\u1361-\u1368]", " ", text)
     # Remove standard punctuation
     text = re.sub(r'[!"#$%&\'()*+,-./:;<=>?@[\\]^_`{|}~]', " ", text)
 
-    # Normalize homophones
+    # Normalize homophones to a single standard form
     # ሀ, ሐ, ኀ -> ሀ
     text = re.sub(r"[ሐኀ]", "ሀ", text)
     text = re.sub(r"[ሑኁ]", "ሁ", text)
@@ -91,19 +93,21 @@ def normalize_amharic(text: str) -> str:
     text = re.sub(r"ፅ", "ጽ", text)
     text = re.sub(r"ፆ", "ጾ", text)
 
-    # Remove extra whitespace
+    # Remove extra whitespace and trim
     text = re.sub(r"\s+", " ", text).strip()
 
     return text
 
 
 def load_training_config(path: str) -> TrainingConfig:
+    """Loads training configuration from a YAML file."""
     with open(path, "r", encoding="utf-8") as f:
         raw = yaml.safe_load(f) or {}
     return TrainingConfig(**raw)
 
 
 def load_amharic_dataset(config: TrainingConfig) -> DatasetDict:
+    """Loads the Amharic dataset from CSV files and casts the audio column."""
     datasets = load_dataset(
         "csv",
         data_files={"train": config.train_csv, "validation": config.validation_csv},
@@ -114,6 +118,7 @@ def load_amharic_dataset(config: TrainingConfig) -> DatasetDict:
 
 @dataclass
 class DataCollatorSpeechSeq2SeqWithPadding:
+    """Data collator that handles dynamic padding for ASR features and labels."""
     processor: WhisperProcessor
 
     def __call__(self, features: list[dict[str, Any]]) -> dict[str, torch.Tensor]:
@@ -123,7 +128,10 @@ class DataCollatorSpeechSeq2SeqWithPadding:
         batch = self.processor.feature_extractor.pad(input_features, return_tensors="pt")
         labels_batch = self.processor.tokenizer.pad(label_features, return_tensors="pt")
 
+        # Replace padding with -100 so it's ignored by the loss function
         labels = labels_batch["input_ids"].masked_fill(labels_batch.attention_mask.ne(1), -100)
+
+        # Remove beginning-of-sentence token if present to let the model add its own
         bos_token = self.processor.tokenizer.bos_token_id
         if bos_token is not None and labels.numel() > 0 and labels.size(1) > 0:
             if (labels[:, 0] == bos_token).all().item():
@@ -134,25 +142,31 @@ class DataCollatorSpeechSeq2SeqWithPadding:
 
 
 def _prepare_dataset(batch: dict[str, Any], processor: WhisperProcessor, config: TrainingConfig) -> dict[str, Any]:
+    """Helper function to preprocess individual dataset batches."""
     audio = batch[config.audio_column]
     batch["input_features"] = processor.feature_extractor(
         audio["array"],
         sampling_rate=audio["sampling_rate"],
     ).input_features[0]
 
-    # Normalize the transcript before tokenization
+    # Normalize the transcript before tokenization for consistency
     normalized_text = normalize_amharic(batch[config.text_column])
     batch["labels"] = processor.tokenizer(normalized_text).input_ids
     return batch
 
 
 def train_model(config: TrainingConfig) -> None:
+    """Fine-tunes the Whisper model on the Amharic dataset."""
+    # Load processor and model
     processor = WhisperProcessor.from_pretrained(config.base_model, language="am", task="transcribe")
     model = WhisperForConditionalGeneration.from_pretrained(config.base_model)
+
+    # Configure generation parameters
     model.generation_config.language = "am"
     model.generation_config.task = "transcribe"
     model.generation_config.forced_decoder_ids = None
 
+    # Load and preprocess dataset
     datasets = load_amharic_dataset(config)
     dataset_columns = datasets["train"].column_names
     datasets = datasets.map(
@@ -166,6 +180,7 @@ def train_model(config: TrainingConfig) -> None:
     wer = evaluate.load("wer")
 
     def compute_metrics(eval_prediction):
+        """Calculates WER for evaluation."""
         pred_ids = eval_prediction.predictions
         label_ids = eval_prediction.label_ids
 
@@ -174,6 +189,7 @@ def train_model(config: TrainingConfig) -> None:
         label_str = processor.tokenizer.batch_decode(label_ids, skip_special_tokens=True)
         return {"wer": 100 * wer.compute(predictions=pred_str, references=label_str)}
 
+    # Define training arguments
     training_args = Seq2SeqTrainingArguments(
         output_dir=config.output_dir,
         per_device_train_batch_size=config.per_device_train_batch_size,
@@ -198,6 +214,7 @@ def train_model(config: TrainingConfig) -> None:
         report_to=[],
     )
 
+    # Initialize trainer
     trainer = Seq2SeqTrainer(
         args=training_args,
         model=model,
@@ -208,6 +225,7 @@ def train_model(config: TrainingConfig) -> None:
         tokenizer=processor.feature_extractor,
     )
 
+    # Start training and save artifacts
     trainer.train()
     trainer.save_model(config.output_dir)
     processor.save_pretrained(config.output_dir)
@@ -254,23 +272,40 @@ def to_vtt(chunks: list[dict[str, Any]]) -> str:
     return "\n".join(vtt_lines)
 
 
+def load_transcription_pipeline(
+    model_dir: str,
+    device: int | None = None,
+    chunk_length_s: int = 30,
+) -> Any:
+    """Initialize the ASR pipeline for inference."""
+    if device is None:
+        device = 0 if torch.cuda.is_available() else -1
+
+    return pipeline(
+        "automatic-speech-recognition",
+        model=model_dir,
+        device=device,
+        chunk_length_s=chunk_length_s,
+    )
+
+
 def transcribe_audio(
     model_dir: str,
     audio_path: str,
     device: int | None = None,
     chunk_length_s: int = 30,
     format: str = "txt",
+    asr_pipeline: Any = None,
 ) -> str:
-    """Generate transcript for an audio file."""
-    if device is None:
-        device = 0 if torch.cuda.is_available() else -1
-
-    asr = pipeline(
-        "automatic-speech-recognition",
-        model=model_dir,
-        device=device,
-        chunk_length_s=chunk_length_s,
-    )
+    """Generate transcript for an audio file, optionally reusing an existing pipeline."""
+    if asr_pipeline is not None:
+        asr = asr_pipeline
+    else:
+        asr = load_transcription_pipeline(
+            model_dir=model_dir,
+            device=device,
+            chunk_length_s=chunk_length_s
+        )
 
     return_timestamps = (format in ["srt", "vtt"])
     result = asr(
@@ -288,6 +323,7 @@ def transcribe_audio(
 
 
 def main() -> None:
+    """Main CLI entry point."""
     parser = argparse.ArgumentParser(description="Amharic ASR Tool")
     subparsers = parser.add_subparsers(dest="command", help="Commands")
 
