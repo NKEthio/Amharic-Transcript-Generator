@@ -7,6 +7,7 @@ from typing import Any
 import evaluate
 import torch
 import yaml
+import librosa
 from datasets import Audio, DatasetDict, load_dataset
 from transformers import (
     Seq2SeqTrainer,
@@ -164,6 +165,7 @@ def train_model(config: TrainingConfig) -> None:
 
     data_collator = DataCollatorSpeechSeq2SeqWithPadding(processor=processor)
     wer = evaluate.load("wer")
+    cer = evaluate.load("cer")
 
     def compute_metrics(eval_prediction):
         pred_ids = eval_prediction.predictions
@@ -172,7 +174,15 @@ def train_model(config: TrainingConfig) -> None:
         label_ids[label_ids == -100] = processor.tokenizer.pad_token_id
         pred_str = processor.tokenizer.batch_decode(pred_ids, skip_special_tokens=True)
         label_str = processor.tokenizer.batch_decode(label_ids, skip_special_tokens=True)
-        return {"wer": 100 * wer.compute(predictions=pred_str, references=label_str)}
+
+        # Normalize Amharic text for fair evaluation
+        pred_str_norm = [normalize_amharic(s) for s in pred_str]
+        label_str_norm = [normalize_amharic(s) for s in label_str]
+
+        return {
+            "wer": 100 * wer.compute(predictions=pred_str_norm, references=label_str_norm),
+            "cer": 100 * cer.compute(predictions=pred_str_norm, references=label_str_norm)
+        }
 
     training_args = Seq2SeqTrainingArguments(
         output_dir=config.output_dir,
@@ -187,8 +197,8 @@ def train_model(config: TrainingConfig) -> None:
         evaluation_strategy="steps",
         save_strategy="steps",
         logging_steps=config.logging_steps,
-        save_steps=config.save_steps,
-        eval_steps=config.eval_steps,
+        save_steps=250, # Default to a reasonable value
+        eval_steps=250, # Default to a reasonable value
         predict_with_generate=True,
         generation_max_length=config.generation_max_length,
         save_total_limit=config.save_total_limit,
@@ -254,29 +264,47 @@ def to_vtt(chunks: list[dict[str, Any]]) -> str:
     return "\n".join(vtt_lines)
 
 
-def transcribe_audio(
+def load_transcription_pipeline(
     model_dir: str,
-    audio_path: str,
     device: int | None = None,
     chunk_length_s: int = 30,
-    format: str = "txt",
-) -> str:
-    """Generate transcript for an audio file."""
+) -> Any:
+    """Loads the ASR pipeline from the specified model directory."""
     if device is None:
         device = 0 if torch.cuda.is_available() else -1
 
-    asr = pipeline(
+    return pipeline(
         "automatic-speech-recognition",
         model=model_dir,
         device=device,
         chunk_length_s=chunk_length_s,
     )
 
+
+def transcribe_audio(
+    model_dir: str,
+    audio_path: str,
+    device: int | None = None,
+    chunk_length_s: int = 30,
+    format: str = "txt",
+    task: str = "transcribe",
+    asr_pipeline: Any | None = None,
+) -> str:
+    """Generate transcript for an audio file."""
+    if asr_pipeline is None:
+        asr = load_transcription_pipeline(model_dir, device, chunk_length_s)
+    else:
+        asr = asr_pipeline
+
+    # Load audio using librosa to ensure correct sampling rate and format
+    audio, sr = librosa.load(audio_path, sr=16000)
+
     return_timestamps = (format in ["srt", "vtt"])
+    # Passing as a dict with "raw" and "sampling_rate" is the safest way for the pipeline
     result = asr(
-        audio_path,
+        {"raw": audio, "sampling_rate": 16000},
         return_timestamps=return_timestamps,
-        generate_kwargs={"language": "amharic"}
+        generate_kwargs={"language": "amharic", "task": task}
     )
 
     if format == "srt":
@@ -317,6 +345,12 @@ def main() -> None:
         default="txt",
         help="Output format (txt, srt, or vtt).",
     )
+    transcribe_parser.add_argument(
+        "--task",
+        choices=["transcribe", "translate"],
+        default="transcribe",
+        help="Task to perform (transcribe or translate).",
+    )
 
     args = parser.parse_args()
 
@@ -330,6 +364,7 @@ def main() -> None:
             device=args.device,
             chunk_length_s=args.chunk_length_s,
             format=args.format,
+            task=args.task,
         )
         print(text)
     else:
