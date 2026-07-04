@@ -3,13 +3,37 @@ import os
 import sys
 import gradio as gr
 import tempfile
+from typing import Any
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SRC = os.path.join(ROOT, "src")
 if SRC not in sys.path:
     sys.path.insert(0, SRC)
 
-from amharic_asr.transcribe import transcribe_audio
+from amharic_asr.transcribe import transcribe_audio, load_transcription_pipeline
+
+# Global cache for the ASR pipeline to avoid reloading the model for every request
+pipeline_cache = {
+    "asr": None,
+    "model_dir": None,
+    "chunk_length_s": None
+}
+
+def get_pipeline(model_dir: str, chunk_length_s: int) -> Any:
+    """
+    Returns the cached ASR pipeline or loads it if it's not in the cache or if settings changed.
+    """
+    global pipeline_cache
+    if (pipeline_cache["asr"] is None or
+        pipeline_cache["model_dir"] != model_dir or
+        pipeline_cache["chunk_length_s"] != chunk_length_s):
+
+        print(f"Loading/Updating model from {model_dir}...")
+        pipeline_cache["asr"] = load_transcription_pipeline(model_dir, chunk_length_s=chunk_length_s)
+        pipeline_cache["model_dir"] = model_dir
+        pipeline_cache["chunk_length_s"] = chunk_length_s
+
+    return pipeline_cache["asr"]
 
 def process_audio(audio_path, model_dir, output_format, chunk_length_s, task):
     """
@@ -23,13 +47,17 @@ def process_audio(audio_path, model_dir, output_format, chunk_length_s, task):
         return f"Model directory not found: {model_dir}", None
 
     try:
+        # Get pipeline from cache
+        asr_pipeline = get_pipeline(model_dir, chunk_length_s)
+
         # Generate transcript using the core transcription logic
         transcript = transcribe_audio(
             model_dir,
             audio_path,
             format=output_format,
             chunk_length_s=chunk_length_s,
-            task=task
+            task=task,
+            asr_pipeline=asr_pipeline
         )
 
         # Save to a temporary file for download
