@@ -1,12 +1,14 @@
 import argparse
 import os
 import re
+import string
 from dataclasses import dataclass
 from typing import Any
 
 import evaluate
 import torch
 import yaml
+import librosa
 from datasets import Audio, DatasetDict, load_dataset
 from transformers import (
     Seq2SeqTrainer,
@@ -52,7 +54,8 @@ def normalize_amharic(text: str) -> str:
     # Remove Amharic punctuation
     text = re.sub(r"[\u1361-\u1368]", " ", text)
     # Remove standard punctuation
-    text = re.sub(r'[!"#$%&\'()*+,-./:;<=>?@[\\]^_`{|}~]', " ", text)
+    for char in string.punctuation:
+        text = text.replace(char, " ")
 
     # Normalize homophones
     # ሀ, ሐ, ኀ -> ሀ
@@ -164,6 +167,7 @@ def train_model(config: TrainingConfig) -> None:
 
     data_collator = DataCollatorSpeechSeq2SeqWithPadding(processor=processor)
     wer = evaluate.load("wer")
+    cer = evaluate.load("cer")
 
     def compute_metrics(eval_prediction):
         pred_ids = eval_prediction.predictions
@@ -172,7 +176,15 @@ def train_model(config: TrainingConfig) -> None:
         label_ids[label_ids == -100] = processor.tokenizer.pad_token_id
         pred_str = processor.tokenizer.batch_decode(pred_ids, skip_special_tokens=True)
         label_str = processor.tokenizer.batch_decode(label_ids, skip_special_tokens=True)
-        return {"wer": 100 * wer.compute(predictions=pred_str, references=label_str)}
+
+        # Normalize for fair evaluation
+        pred_str_norm = [normalize_amharic(s) for s in pred_str]
+        label_str_norm = [normalize_amharic(s) for s in label_str]
+
+        return {
+            "wer": 100 * wer.compute(predictions=pred_str_norm, references=label_str_norm),
+            "cer": 100 * cer.compute(predictions=pred_str_norm, references=label_str_norm)
+        }
 
     training_args = Seq2SeqTrainingArguments(
         output_dir=config.output_dir,
@@ -254,27 +266,41 @@ def to_vtt(chunks: list[dict[str, Any]]) -> str:
     return "\n".join(vtt_lines)
 
 
-def transcribe_audio(
+def load_transcription_pipeline(
     model_dir: str,
-    audio_path: str,
     device: int | None = None,
     chunk_length_s: int = 30,
-    format: str = "txt",
-) -> str:
-    """Generate transcript for an audio file."""
+) -> Any:
+    """Loads the ASR pipeline for reuse."""
     if device is None:
         device = 0 if torch.cuda.is_available() else -1
 
-    asr = pipeline(
+    return pipeline(
         "automatic-speech-recognition",
         model=model_dir,
         device=device,
         chunk_length_s=chunk_length_s,
     )
 
+
+def transcribe_audio(
+    model_dir: str,
+    audio_path: str,
+    device: int | None = None,
+    chunk_length_s: int = 30,
+    format: str = "txt",
+    asr_pipeline: Any = None,
+) -> str:
+    """Generate transcript for an audio file."""
+    if asr_pipeline is None:
+        asr_pipeline = load_transcription_pipeline(model_dir, device, chunk_length_s)
+
+    # Use librosa for consistent audio loading
+    audio, sr = librosa.load(audio_path, sr=16000)
+
     return_timestamps = (format in ["srt", "vtt"])
-    result = asr(
-        audio_path,
+    result = asr_pipeline(
+        audio,
         return_timestamps=return_timestamps,
         generate_kwargs={"language": "amharic"}
     )

@@ -11,7 +11,7 @@ SRC = os.path.join(ROOT, "src")
 if SRC not in sys.path:
     sys.path.insert(0, SRC)
 
-from amharic_asr.transcribe import transcribe_audio
+from amharic_asr.transcribe import transcribe_audio, load_transcription_pipeline
 from amharic_asr.data import normalize_amharic
 
 
@@ -39,9 +39,13 @@ def main() -> None:
         print(f"Error: CSV must contain columns '{args.audio_column}' and '{args.text_column}'")
         sys.exit(1)
 
+    # Pre-load the pipeline to avoid reloading for every sample
+    print(f"Loading model from {args.model_dir}...")
+    asr_pipeline = load_transcription_pipeline(args.model_dir, device=args.device)
+
     results = []
 
-    print(f"Evaluating model from {args.model_dir} on {len(df)} samples...")
+    print(f"Evaluating {len(df)} samples...")
 
     for _, row in tqdm(df.iterrows(), total=len(df)):
         audio_path = row[args.audio_column]
@@ -56,12 +60,13 @@ def main() -> None:
                 audio_path = alt_path
 
         try:
-            # Generate prediction
+            # Generate prediction using the pre-loaded pipeline
             prediction = transcribe_audio(
                 args.model_dir,
                 audio_path,
                 device=args.device,
-                format="txt"
+                format="txt",
+                asr_pipeline=asr_pipeline
             )
 
             # Normalize for fair evaluation
@@ -69,7 +74,6 @@ def main() -> None:
             norm_pred = normalize_amharic(prediction)
 
             # Compute metrics for this sample
-            # jiwer.wer and jiwer.cer can handle empty strings but we should be careful
             sample_wer = jiwer.wer(norm_ref, norm_pred) if norm_ref else (1.0 if norm_pred else 0.0)
             sample_cer = jiwer.cer(norm_ref, norm_pred) if norm_ref else (1.0 if norm_pred else 0.0)
 
