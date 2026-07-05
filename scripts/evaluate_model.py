@@ -11,7 +11,7 @@ SRC = os.path.join(ROOT, "src")
 if SRC not in sys.path:
     sys.path.insert(0, SRC)
 
-from amharic_asr.transcribe import transcribe_audio
+from amharic_asr.transcribe import transcribe_audio, load_transcription_pipeline
 from amharic_asr.data import normalize_amharic
 
 
@@ -43,6 +43,12 @@ def main() -> None:
 
     print(f"Evaluating model from {args.model_dir} on {len(df)} samples...")
 
+    # Load the model once to be reused for all samples
+    asr_pipeline = load_transcription_pipeline(
+        model_dir=args.model_dir,
+        device=args.device
+    )
+
     for _, row in tqdm(df.iterrows(), total=len(df)):
         audio_path = row[args.audio_column]
         reference = row[args.text_column]
@@ -56,12 +62,13 @@ def main() -> None:
                 audio_path = alt_path
 
         try:
-            # Generate prediction
+            # Generate prediction using the pre-loaded pipeline
             prediction = transcribe_audio(
                 args.model_dir,
                 audio_path,
                 device=args.device,
-                format="txt"
+                format="txt",
+                asr_pipeline=asr_pipeline
             )
 
             # Normalize for fair evaluation

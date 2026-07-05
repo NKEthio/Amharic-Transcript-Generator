@@ -9,7 +9,14 @@ SRC = os.path.join(ROOT, "src")
 if SRC not in sys.path:
     sys.path.insert(0, SRC)
 
-from amharic_asr.transcribe import transcribe_audio
+from amharic_asr.transcribe import transcribe_audio, load_transcription_pipeline
+
+# Global cache to keep the model in memory
+pipeline_cache = {
+    "asr_pipeline": None,
+    "model_dir": None,
+    "chunk_length_s": None
+}
 
 def process_audio(audio_path, model_dir, output_format, chunk_length_s, task):
     """
@@ -23,13 +30,27 @@ def process_audio(audio_path, model_dir, output_format, chunk_length_s, task):
         return f"Model directory not found: {model_dir}", None
 
     try:
+        # Check if we can reuse the cached pipeline
+        if (pipeline_cache["asr_pipeline"] is None or
+            pipeline_cache["model_dir"] != model_dir or
+            pipeline_cache["chunk_length_s"] != chunk_length_s):
+
+            print(f"Loading/Reloading model from {model_dir}...")
+            pipeline_cache["asr_pipeline"] = load_transcription_pipeline(
+                model_dir=model_dir,
+                chunk_length_s=chunk_length_s
+            )
+            pipeline_cache["model_dir"] = model_dir
+            pipeline_cache["chunk_length_s"] = chunk_length_s
+
         # Generate transcript using the core transcription logic
         transcript = transcribe_audio(
             model_dir,
             audio_path,
             format=output_format,
             chunk_length_s=chunk_length_s,
-            task=task
+            task=task,
+            asr_pipeline=pipeline_cache["asr_pipeline"]
         )
 
         # Save to a temporary file for download
