@@ -254,27 +254,54 @@ def to_vtt(chunks: list[dict[str, Any]]) -> str:
     return "\n".join(vtt_lines)
 
 
-def transcribe_audio(
+def load_transcription_pipeline(
     model_dir: str,
-    audio_path: str,
     device: int | None = None,
     chunk_length_s: int = 30,
-    format: str = "txt",
-) -> str:
-    """Generate transcript for an audio file."""
+) -> Any:
+    """
+    Loads and returns an ASR pipeline for Amharic.
+    Reusing this pipeline across multiple requests is more efficient.
+    """
     if device is None:
         device = 0 if torch.cuda.is_available() else -1
 
-    asr = pipeline(
+    return pipeline(
         "automatic-speech-recognition",
         model=model_dir,
         device=device,
         chunk_length_s=chunk_length_s,
     )
 
+
+def transcribe_audio(
+    model_dir: str,
+    audio_path: str,
+    device: int | None = None,
+    chunk_length_s: int = 30,
+    format: str = "txt",
+    asr_pipeline: Any | None = None,
+) -> str:
+    """
+    Generate transcript for an audio file.
+    If asr_pipeline is provided, it uses that instead of loading the model.
+    """
+    if asr_pipeline is not None:
+        asr = asr_pipeline
+    else:
+        asr = load_transcription_pipeline(
+            model_dir=model_dir,
+            device=device,
+            chunk_length_s=chunk_length_s
+        )
+
     return_timestamps = (format in ["srt", "vtt"])
+    # We use a dict input for pipeline to ensure correct processing and 16k SR
+    import librosa
+    audio, _ = librosa.load(audio_path, sr=16000)
+
     result = asr(
-        audio_path,
+        {"raw": audio, "sampling_rate": 16000},
         return_timestamps=return_timestamps,
         generate_kwargs={"language": "amharic"}
     )
